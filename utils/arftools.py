@@ -65,8 +65,7 @@ def gen_arti(centerx=1,centery=1,sigma=0.1,nbex=1000,data_type=0,epsilon=0.02):
         xpos=np.vstack((np.random.multivariate_normal([centerx,centerx],np.diag([sigma,sigma]),nbex//4),np.random.multivariate_normal([-centerx,-centerx],np.diag([sigma,sigma]),nbex//4)))
         xneg=np.vstack((np.random.multivariate_normal([-centerx,centerx],np.diag([sigma,sigma]),nbex//4),np.random.multivariate_normal([centerx,-centerx],np.diag([sigma,sigma]),nbex//4)))
         data=np.vstack((xpos,xneg))
-        y=np.hstack((np.ones(nbex/2),-np.ones(nbex//2)))
-
+        y=np.hstack((np.ones(int(nbex/2)),-np.ones(nbex//2)))
     if data_type==2:
         #echiquier
         data=np.reshape(np.random.uniform(-4,4,2*nbex),(nbex,2))

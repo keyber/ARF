@@ -37,6 +37,8 @@ steps = 10
 xx,yy = np.meshgrid(np.linspace(xmin,xmax,steps),np.linspace(ymin,ymax,steps))
 grid = np.c_[xx.ravel(),yy.ravel()]
 
+# plt.show()
+
 plt.close('all')
 
 class ModelHisto:
@@ -53,43 +55,49 @@ class ModelHisto:
         plt.close("figureHistoTmp")
         return h
 
-def distance(x1, x2):
-    return
+def similarite_parzen(x1, x2, width):
+    diff = x1[0] - x2[0], x1[1] - x2[1]
+    norm = diff[0] ** 2 + diff[1] ** 2
+    return 1/width**2 if norm < width**2 else 0
 
-class ModelParzen:
-    def fit(self, points, distancewx, wy):
+def similarite_gauss(x1, x2, sigma_2):
+    diff = x1[0] - x2[0], x1[1] - x2[1]
+    norm_2 = diff[0] ** 2 + diff[1] ** 2
+    return 1/np.sqrt(2*np.pi*sigma_2) * np.exp(-norm_2/(2*sigma_2))
+
+class ModelNoyau:
+    def fit(self, points, distance):
         self.points = points
         self.n = len(self.points)
-        this.distance = distance
-        self.wx = wx
-        self.wy = wy
+        self.similarite = distance
     
     def predict(self, grid):
         #x et y inversés
-        return np.array([self.predictPoint(y,x) for (x,y) in grid])
+        res = np.array([self.predictPoint(y,x) for (x,y) in grid])
+        return res / np.sum(res)
     
     def predictPoint(self, x, y):
-        #parcourt tous les points de la base d'apprentissage
-        cpt = 0
-        for (px, py) in self.points:
-            if abs(x - px)<self.wx and abs(y - py) < self.wy:
-                cpt += 1
-        cpt /= self.wx * self.wy * self.n
-        return cpt
+        # parcourt tous les points de la base d'apprentissage
+        s = sum(self.similarite((x, y), (px, py)) for (px, py) in self.points)
+        return s / self.n
 
 
-#res = np.random.random((steps,steps))
-modelHisto = ModelHisto()
-modelHisto.fit(geo_mat, steps)
+def _main():
+    modelHisto = ModelHisto()
+    modelHisto.fit(geo_mat, steps)
+    
+    modelParzen = ModelNoyau()
+    modelParzen.fit(geo_mat, lambda x1, x2: similarite_parzen(x1, x2, .05))
+    
+    modelGauss = ModelNoyau()
+    modelGauss.fit(geo_mat, lambda x1,x2: similarite_gauss(x1, x2, .0001))
+    
+    for model in [modelHisto, modelParzen, modelGauss]:
+        res = model.predict(grid).reshape(steps,steps)
+        plt.figure()
+        plt.imshow(res, extent=[xmin,xmax,ymin,ymax], interpolation='none', alpha=0.3, origin="lower")
+        plt.colorbar()
+    plt.show()
 
-import math
-modelParzen = ModelParzen()
-modelParzen.fit(geo_mat, (xmax-xmin)/steps, (ymax-ymin)/steps)
-
-for model in [modelHisto, modelParzen]:
-    res = model.predict(grid).reshape(steps,steps)
-    plt.figure()
-    plt.imshow(res,extent=[xmin,xmax,ymin,ymax],interpolation='none',
-                   alpha=0.3,origin = "lower")
-    plt.colorbar()
-plt.show()
+if __name__ == '__main__':
+    _main()
