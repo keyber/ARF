@@ -87,7 +87,7 @@ def _undo_pixel_lasso(patch, data_complete, alpha, max_iter=1000):
     patch[inconnus] = np.array([d[inconnus] for d in data_complete]).T.dot(m.coef_) + m.intercept_
 
 
-def undo_noise(image, w=3, threshOS=.01, alpha=.1, max_iter=1000):
+def undo_noise(image, w=3, threshOS=0.0, alpha=.1, max_iter=1000):
     coo, complete = split_complete_incomplete(image, w)
     data = np.array([get_patch(image, x, y, w) for (x,y) in coo])
     data_complete = data[complete==True]
@@ -125,7 +125,7 @@ def _get_spiral_coo(rect, w):
     
     return points
 
-def undo_rect(image, rect, w=3, threshOS=.01, alpha=.01, max_iter=1000, verbose=False):
+def undo_rect(image, rect, w=3, threshOS=0.0, alpha=.01, max_iter=1000, verbose=False):
     coo, complete = split_complete_incomplete(image, w)
     
     data = np.array([get_patch(image, x, y, w) for (x, y) in coo])
