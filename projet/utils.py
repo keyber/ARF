@@ -4,7 +4,6 @@ import matplotlib.colors as col
 import numpy as np
 import itertools
 
-
 REMOVED = -100
 
 def read_im(filename):
@@ -38,9 +37,10 @@ def noise(image, p, marge=10):
     
     return res
 
-def delete_rec(image, i, j, w, h):
+def delete_rec(image, rec):
     res = image.copy()
-    res[i:i+w, j:j+h] = np.full((w,h), REMOVED)
+    i, j, w, h = rec
+    res[i:i+w, j:j+h] = np.full((w, h, 3), REMOVED)
     return res
 
 def split_complete_incomplete(image, h):
@@ -57,40 +57,118 @@ def split_complete_incomplete(image, h):
     return coo_patches, complete
 
 
-def undo_noise(image, w=3, alpha=.01):
+def _undo_pixel_exact(patch, data_complete, eps):
+    """on cherche un patch identique au notre à eps près"""
+    if eps <= 0:
+        return
+    connus = patch != REMOVED
+    inconnus = patch == REMOVED
+    
+    diff = data_complete[:, connus] - np.expand_dims(patch[connus], 0)
+    dist = np.mean(np.power(diff, 2), axis=1)
+    best = np.argmin(dist)
+    
+    if dist[best] < eps:
+        patch[inconnus] = data_complete[best][inconnus]
+        return True
+    
+    return False
+
+
+def _undo_pixel_lasso(patch, data_complete, alpha, max_iter=1000):
+    """on cherche une combinaison de pas trop de patchs"""
+    connus = patch != REMOVED
+    inconnus = patch == REMOVED
+    m = sklearn.linear_model.Lasso(alpha=alpha, max_iter=max_iter)
+    train = np.array([d[connus] for d in data_complete])
+    train = train.T
+    m.fit(train, patch[connus])
+    
+    patch[inconnus] = np.array([d[inconnus] for d in data_complete]).T.dot(m.coef_) + m.intercept_
+
+
+def undo_noise(image, w=3, threshOS=.01, alpha=.1, max_iter=1000):
     coo, complete = split_complete_incomplete(image, w)
     data = np.array([get_patch(image, x, y, w) for (x,y) in coo])
     data_complete = data[complete==True]
     
     for x,y in coo[complete==False]:
         patch = get_patch(image, x, y, w)
-        connus   = patch != REMOVED
-        inconnus = patch == REMOVED
-        
-        m = sklearn.linear_model.Lasso(alpha=alpha, tol=1e-6, max_iter=1e5)
-        train = np.array([d[connus] for d in data_complete])
-        train = train.T
-        m.fit(train, patch[connus])
-        print("loss train", np.mean(np.power(train.dot(m.coef_) + m.intercept_ - patch[connus], 2)),
-              "nb poids", np.count_nonzero(m.coef_), "/", len(m.coef_))
-        
-        patch[inconnus] = np.array([d[inconnus] for d in data_complete]).T.dot(m.coef_) + m.intercept_
+        if not _undo_pixel_exact(patch, data_complete, threshOS):
+            _undo_pixel_lasso(patch, data_complete, alpha, max_iter)
 
-def undo_rect(image, rect, w=3, alpha=.01):
-    pass
 
-def _main():
-    im = read_im("dégradé2.jpeg")
+def _get_spiral_coo(rect, w):
+    x0, y0, x1, y1 = rect[0], rect[1], rect[0] + rect[2], rect[1] + rect[3]
+    
+    # shift pour que le patch ne contienne que le point courrant
+    # sens de parcourt: gauche bas droite haut
+    sx = [-w + 1, 0, 0, -w + 1]
+    sy = [-w + 1, -w + 1, 0, 0]
+    points = []
+    # côté actuel
+    c = 0
+    while x0 != x1 and y0 != y1:
+        if c == 0:
+            points += [(x + sx[c], y0 + sy[c]) for x in range(x0, x1, 1)]
+            y0 += 1
+        elif c == 1:
+            points += [(x1 - 1 + sx[c], y + sy[c]) for y in range(y0, y1, 1)]
+            x1 -= 1
+        elif c == 2:
+            points += [(x + sx[c], y1 - 1 + sy[c]) for x in range(x1 - 1, x0 - 1, -1)]
+            y1 -= 1
+        elif c == 3:
+            points += [(x0 + sx[c], y + sy[c]) for y in range(y1 - 1, y0 - 1, -1)]
+            x0 += 1
+        c = (c + 1) % 4
+    
+    return points
+
+def undo_rect(image, rect, w=3, threshOS=.01, alpha=.01, max_iter=1000, verbose=False):
+    coo, complete = split_complete_incomplete(image, w)
+    
+    data = np.array([get_patch(image, x, y, w) for (x, y) in coo])
+    data_complete = data[complete == True]
+    for x, y in _get_spiral_coo(rect, w):
+        patch = get_patch(image, x, y, w)
+        if not _undo_pixel_exact(patch, data_complete, threshOS):
+            _undo_pixel_lasso(patch, data_complete, alpha=alpha, max_iter=max_iter)
+    
+def _main1():
+    im = read_im("degrade2_petit.png")
     # print_im(im)
     p = .001
     bruitee = noise(im, p)
-    print("image", im.shape, "nb pixels", im.size//3)
-    print("nb à reconstruire", int(im.size//3 * p))
+    print("image", im.shape, "nb pixels", im.size // 3)
+    print("nb à reconstruire", int(im.size // 3 * p))
     print_im(bruitee)
     undo_noise(bruitee)
     print_im(bruitee)
     print("loss", np.mean(np.power(im - bruitee, 2)))
     plt.show()
-    
+
+def _main2():
+    im = read_im("degrade2_petit.png")
+    rectangles = [
+        (20,20,2,10),
+        (50,20,8,16),
+        (25,50,8,8),
+        (50,60,3,10),
+    ]
+    bruitee = im
+    for r in rectangles:
+        bruitee = delete_rec(bruitee,r)
+    print("image", im.shape, "nb pixels", im.size // 3)
+    print("nb à reconstruire", sum(r[2]*r[3] for r in rectangles))
+    # print_im(bruitee)
+    for i, r in enumerate(rectangles):
+        print(i, "/", len(rectangles))
+        undo_rect(bruitee,r, w=3, threshOS=.01, alpha=.001, max_iter=int(1e4), verbose=True)
+    print_im(bruitee)
+    print("loss", np.mean(np.power(im - bruitee, 2)))
+    plt.show()
+
 if __name__ == '__main__':
-    _main()
+    # _main1()
+    _main2()
